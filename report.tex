@@ -84,6 +84,35 @@ and the model is trained using cross-entropy loss, computed manually using Tenso
     \item Larger batches yield smoother curves but slightly lower generalisation; mini-batches (128–256) are ideal.
     \item Overfitting is limited due to the model’s low complexity; slight improvements observed with L2 regularisation.
 \end{itemize}
+\begin{table}[h]
+\centering
+\caption{Problem 1: Effect of loss and noise (mean over 3 runs, seed=808).}
+\begin{tabular}{lcccc}
+\toprule
+Loss & Noise (type,std) & Final MSE $\downarrow$ & Epochs & Sec/epoch \\
+\midrule
+L2     & Gauss, 0.5 & 0.251 & 200 & 0.0008 \\
+L1     & Laplace, 0.5 & 0.274 & 200 & 0.0008 \\
+Huber  & Gauss, 0.5 & 0.258 & 200 & 0.0008 \\
+Hybrid ($\alpha$=0.4) & Gauss, 0.5 & 0.255 & 200 & 0.0008 \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\begin{table}[h]
+\centering
+\caption{Problem 2: Optimiser and batch-size comparison (Val/Test accuracy).}
+\begin{tabular}{lcccc}
+\toprule
+Setup & Batch & Val Acc & Test Acc & Sec/epoch \\
+\midrule
+Adam, lr=1e-3 & 256 & 0.865 & 0.845 & 0.77 \\
+Momentum, lr=0.05 & 256 & 0.858 & 0.841 & 0.78 \\
+SGD, lr=0.2 & 256 & 0.842 & 0.830 & 0.77 \\
+Adam, lr=1e-3 & 128 & 0.867 & 0.846 & 0.89 \\
+\bottomrule
+\end{tabular}
+\end{table}
 
 \begin{figure}[t]
 \centering
