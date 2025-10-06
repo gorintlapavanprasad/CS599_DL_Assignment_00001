@@ -1,4 +1,3 @@
-
 % report.tex — NeurIPS-style submission (use neurips_2021 or later)
 \documentclass{article}
 \usepackage[preprint]{neurips_2021}
@@ -6,7 +5,7 @@
 \usepackage{microtype}
 \usepackage{xcolor}
 \title{CS 599: Foundations of Deep Learning --- Assignment \#00001\\
-Linear and Logistic Regression with Eager TensorFlow (No Keras)}
+Linear and Logistic Regression using TensorFlow 2 (Eager Execution, No Keras)}
 \author{Pavan Prasad Gorintla\\Northern Arizona University}
 \date{December 17, 2024}
 
@@ -14,82 +13,122 @@ Linear and Logistic Regression with Eager TensorFlow (No Keras)}
 \maketitle
 
 \begin{abstract}
-We implement linear and logistic regression using \textbf{TensorFlow~2 eager} APIs (\emph{no Keras models}). For linear regression on a synthetic target $f(x)=3x+2+\epsilon$ we compare L2, L1, Huber, and a hybrid loss ($\alpha$L1+\,(1-$\alpha$)L2), along with noise injection (data/weights/LR), patience-based LR halving, warmup--cosine scheduling, and different initializations. For Fashion-MNIST, a multinomial logistic regressor is trained with manual loops; we study optimizers, batch size, Train/Val curves, overfitting, CPU vs GPU timing, and cluster the learned class weight vectors (t-SNE + $k$-means). Code is public at: \textbf{\color{blue}{[Insert Your GitHub Link Here]}}.
+This report presents an in-depth implementation of Linear and Logistic Regression models developed using \textbf{TensorFlow~2} in \emph{eager execution} mode, without relying on Keras high-level APIs. For the linear regression task, the model learns the mapping $f(x) = 3x + 2 + \epsilon$ using iterative gradient-based optimisation. We compare several loss functions (L1, L2, Huber, and Hybrid), explore learning rate schedulers, and examine the impact of noise in data, weights, and learning rate. The logistic regression model is evaluated on the Fashion-MNIST dataset to study multi-class classification using manual gradient computation. The project also explores optimiser choice, batch size, overfitting behaviour, and CPU vs GPU training time. Source code and results are available publicly at:  
+\textbf{\color{blue}{\href{https://github.com/gorintlapavanprasad/CS599_DL_Assignment_00001}{https://github.com/gorintlapavanprasad/CS599_DL_Assignment_00001}}}.
 \end{abstract}
 
-\section{Reproducibility \& Setup}
-\textbf{Framework:} TensorFlow~2 (eager), NumPy, Matplotlib, scikit-learn. \textbf{No Keras models.} Only the TF dataset loader is used for Fashion-MNIST. \textbf{Seeds:} All experiments use a unique integer seed; per instruction, we convert the student's first name to decimal (e.g., \texttt{Pavan}$\to$808; method described). \textbf{Hardware:} We report per-epoch CPU vs GPU wall-clock (Figures~\ref{fig:lin-time},\ref{fig:log-time}).
+\section{Experimental Setup and Reproducibility}
+All experiments are performed in \textbf{TensorFlow~2 (Eager Mode)} with NumPy, Matplotlib, and scikit-learn. Only the TensorFlow dataset loader is used for Fashion-MNIST; no Keras models or layers are employed. Each experiment is conducted with a unique random seed derived by converting the student's first name into a decimal value (\texttt{Pavan} $\to$ 808). Timing is measured on both CPU and GPU to compare computational performance per epoch.
 
-\section{Problem~1: Linear Regression}
-\paragraph{Model.} $\hat y = Wx + b$, trained by SGD/Adam via \texttt{tf.GradientTape}. 
-\paragraph{Losses.} 
+\section{Problem 1: Linear Regression}
+\subsection{Model Formulation}
+The regression model is defined as $\hat{y} = Wx + b$, optimised using gradient descent computed through \texttt{tf.GradientTape}. Rather than solving analytically, parameters are updated iteratively, giving flexibility to test various learning strategies.
+
+\subsection{Loss Functions}
+The following loss formulations were implemented:
 \begin{align}
-\mathcal{L}_{\text{L2}} &= \frac{1}{N}\sum_i (y_i-\hat y_i)^2,\quad
-\mathcal{L}_{\text{L1}} = \frac{1}{N}\sum_i |y_i-\hat y_i|,\\
-\mathcal{L}_{\text{Huber}} &= \frac{1}{N}\sum_i \begin{cases}
-\frac{1}{2}(y_i-\hat y_i)^2 & |y_i-\hat y_i|\le \delta\\
-\delta|y_i-\hat y_i| - \frac{1}{2}\delta^2 & \text{otherwise}
-\end{cases},\quad
-\mathcal{L}_{\text{hybrid}}=\alpha \mathcal{L}_{\text{L1}} + (1-\alpha)\mathcal{L}_{\text{L2}}.
+\mathcal{L}_{L2} &= \frac{1}{N}\sum_i (y_i-\hat{y}_i)^2, \quad
+\mathcal{L}_{L1} = \frac{1}{N}\sum_i |y_i-\hat{y}_i|, \\
+\mathcal{L}_{Huber} &= 
+\begin{cases}
+\frac{1}{2}(y_i-\hat{y}_i)^2, & |y_i-\hat{y}_i|\le \delta \\
+\delta|y_i-\hat{y}_i| - \frac{1}{2}\delta^2, & \text{otherwise}
+\end{cases}, \\
+\mathcal{L}_{Hybrid} &= \alpha \mathcal{L}_{L1} + (1-\alpha)\mathcal{L}_{L2}.
 \end{align}
-We also include optional L2 weight decay $\lambda(\|W\|_2^2+\|b\|_2^2)$.
-\paragraph{Schedulers.} (i) \emph{Plateau-halving}: halve LR when loss does not improve for $p$ epochs, tolerance $\tau$. (ii) \emph{Warmup+Cosine}.
-\paragraph{Noise.} Data noise: Gaussian/Uniform/Laplace; weight noise each epoch; LR jitter $\eta$ per epoch.
+An additional L2 regularisation term $\lambda(\|W\|_2^2 + \|b\|_2^2)$ is optionally included for better generalisation.
 
-\paragraph{Findings.} 
+\subsection{Schedulers and Noise}
+Learning rate scheduling is studied using:
+\begin{enumerate}
+    \item \textbf{Plateau-halving:} learning rate is reduced by half when loss stagnates for $p$ epochs.
+    \item \textbf{Warmup + Cosine decay:} gradually increases the learning rate at the start, followed by a smooth cosine decay.
+\end{enumerate}
+Noise is introduced in three forms --- additive data noise, multiplicative weight noise, and random perturbation of the learning rate (LR jitter). These help analyse the model’s stability and robustness to randomness.
+
+\subsection{Key Observations}
 \begin{itemize}
-\item With heavy-tailed noise, L1/Huber are more robust than L2; for Gaussian noise, L2 converges fastest. Hybrid ($\alpha\!\approx\!0.3\text{--}0.5$) balances bias/variance.
-\item Larger LR speeds early progress but risks oscillation; plateau scheduling recovers with automatic LR cuts. Warmup stabilizes aggressive LRs.
-\item Different initial $(W,b)$ only changes early transients; all losses converge near $(3,2)$ when optimization and noise are well tuned.
-\item Weight/data/LR noise can act as regularization: slightly slower but flatter minima and better robustness.
+    \item \textbf{Loss behaviour:} L2 converges faster for Gaussian noise, while L1 and Huber perform better under outliers or heavy-tailed noise. Hybrid loss ($\alpha \in [0.3,0.5]$) gives a balanced trade-off between stability and bias.
+    \item \textbf{Learning rate:} A larger LR leads to faster convergence initially but may oscillate near minima. Adaptive schedules (plateau-halving or warmup) restore stability.
+    \item \textbf{Initialisation:} Changing $(W,b)$ only affects early learning; all methods converge close to the true parameters $(3,2)$ after sufficient epochs.
+    \item \textbf{Noise impact:} Injecting small noise improves generalisation by avoiding sharp minima; moderate noise acts like a regulariser.
 \end{itemize}
 
 \begin{figure}[t]
 \centering
 \includegraphics[width=.48\linewidth]{figs/linreg_l2_lr0.05_noise0.5_seed808_fit.png}\hfill
 \includegraphics[width=.48\linewidth]{figs/linreg_l2_lr0.05_noise0.5_seed808_loss.png}
-\caption{Problem~1: fit (left) and loss curve (right).}
+\caption{Linear Regression: model fit (left) and loss curve (right).}
 \label{fig:lin}
 \end{figure}
 
-\section{Problem~2: Logistic Regression on Fashion-MNIST}
-\paragraph{Model.} Multinomial logistic regression with weights $W\in\mathbb{R}^{784\times 10}$, biases $b\in\mathbb{R}^{10}$. Training uses cross-entropy with manual tape.
-\paragraph{Ablations.} Optimizers (SGD/Momentum/Adam), epochs, batch size, train/val split, weight decay, patience scheduling.
-\paragraph{Metrics.} Train/Val curves, Test accuracy, per-epoch timing, weight images, $k$-means clusters, t-SNE of class weight vectors.
+\section{Problem 2: Logistic Regression on Fashion-MNIST}
+\subsection{Model and Objective}
+We implement a multi-class logistic regression model with parameters $W \in \mathbb{R}^{784\times10}$ and $b \in \mathbb{R}^{10}$. Predictions are computed as:
+\[
+\hat{y} = \text{softmax}(Wx + b),
+\]
+and the model is trained using cross-entropy loss, computed manually using TensorFlow’s gradient tape for full transparency.
 
-\paragraph{Findings.}
+\subsection{Experimental Variations}
 \begin{itemize}
-\item Adam typically reaches higher Val accuracy faster; Momentum SGD closes the gap with tuned LR and batch. 
-\item Larger batches smooth the loss but may generalize slightly worse; $128$–$512$ is a good balance.
-\item With too few epochs or large LR, the model underfits; true overfitting is modest due to low capacity. Weight decay helps if Val loss rises.
+    \item \textbf{Optimisers:} SGD, Momentum SGD, and Adam were compared.
+    \item \textbf{Batch sizes:} Ranging from 32 to 512.
+    \item \textbf{Epochs and learning rates:} Extended training and tuned LRs for performance analysis.
+    \item \textbf{Regularisation:} Weight decay and LR scheduling to address mild overfitting.
+\end{itemize}
+
+\subsection{Results and Discussion}
+\begin{itemize}
+    \item Adam consistently achieves faster convergence and higher validation accuracy, while Momentum performs comparably with tuned LR.
+    \item Larger batches yield smoother curves but slightly lower generalisation; mini-batches (128–256) are ideal.
+    \item Overfitting is limited due to the model’s low complexity; slight improvements observed with L2 regularisation.
 \end{itemize}
 
 \begin{figure}[t]
 \centering
 \includegraphics[width=.48\linewidth]{figs/fashionmnist_adam_b256_lr0.001_val0.1_seed808_loss.png}\hfill
 \includegraphics[width=.48\linewidth]{figs/fashionmnist_adam_b256_lr0.001_val0.1_seed808_acc.png}
-\caption{Problem~2: loss and accuracy curves (Train vs Val).}
+\caption{Logistic Regression: loss and accuracy (Train vs Val).}
 \label{fig:log-curves}
 \end{figure}
 
-\paragraph{CPU vs GPU.} We log wall-clock seconds per epoch; GPU offers speedups for larger batches due to vectorized matmuls (Fig.~\ref{fig:log-time}).
+\subsection{Timing Analysis}
+The per-epoch timing (Fig.~\ref{fig:log-time}) shows that GPU accelerates matrix operations significantly for larger batch sizes. On smaller batches, CPU and GPU times are nearly comparable due to overhead in kernel launches.
 
 \begin{figure}[t]
 \centering
 \includegraphics[width=.48\linewidth]{figs/linreg_l2_lr0.05_noise0.5_seed808_time.png}\hfill
 \includegraphics[width=.48\linewidth]{figs/fashionmnist_adam_b256_lr0.001_val0.1_seed808_time.png}
-\caption{Timing per epoch for Linear (left) and Logistic (right).}
+\caption{Per-epoch timing for Linear (left) and Logistic (right) models.}
 \label{fig:lin-time}\label{fig:log-time}
 \end{figure}
 
 \section{Seed and Repeatability}
-No two runs are identical due to random shuffling, numeric order of ops, and non-determinism on GPUs. Fixing seeds for Python/NumPy/TF reduces but does not remove differences. We use a unique seed for each experiment; to meet the instruction ``convert first name to decimal,'' we map characters to ASCII and sum: e.g., \texttt{Pavan} $\to$ 80+97+118+97+110=502 (use your chosen mapping consistently).
+Training results vary slightly between runs because of random shuffling, floating-point order, and GPU non-determinism. Fixing seeds for Python, NumPy, and TensorFlow improves reproducibility but does not make runs identical. As per assignment rules, we generate a unique integer seed from the student’s first name by converting characters to ASCII values and summing them (e.g., \texttt{Pavan}$\to$80+97+118+97+110=502).
 
-\section{Discussion: Noise and Robustness}
-Noise can be beneficial: (i) label/feature noise reveals loss robustness (L1/Huber), (ii) weight noise and LR jitter emulate stochastic regularization, and (iii) moderate noise can lead to flatter minima and faster escape from sharp basins, improving generalization.
+\section{Effect of Noise on Robustness}
+Controlled noise proved beneficial in several cases:
+\begin{enumerate}
+    \item \textbf{Input noise} improves loss robustness under label or feature perturbations.
+    \item \textbf{Weight noise} and \textbf{LR jitter} behave like stochastic regularisers, encouraging flatter minima.
+    \item \textbf{Moderate noise} accelerates convergence by preventing early stagnation in sharp loss basins.
+\end{enumerate}
 
-\section{Appendix}
-\textbf{How to run.} See README for exact commands. Figures are auto-saved to \texttt{figs/}, logs to \texttt{results/}. \\
-\textbf{GitHub.} Insert your public link above, and include commit hash.
+\section{Conclusion}
+This assignment deepened my practical understanding of gradient-based learning under the eager execution paradigm of TensorFlow~2. By manually implementing both linear and logistic regression, I gained insights into optimisation dynamics, the importance of loss selection, and the role of noise in generalisation. These experiments demonstrate how even simple models can reveal key behaviours foundational to modern deep learning.
+
+\section*{Appendix}
+\textbf{How to Reproduce:}
+\begin{itemize}
+    \item Linear regression: \texttt{python3 lin\_reg.py --epochs 200 --lr 0.05 --loss l2 --noise\_std 0.5}
+    \item Logistic regression: \texttt{python3 log\_reg.py --epochs 30 --batch 256 --opt adam --lr 0.001}
+\end{itemize}
+All figures are auto-saved in \texttt{figs/} and logs in \texttt{results/}.  
+
+\textbf{GitHub Repository:} \\
+\url{https://github.com/gorintlapavanprasad/CS599_DL_Assignment_00001}
+
+\textbf{Commit Reference:} please include the latest commit hash at the time of submission.
 
 \end{document}
